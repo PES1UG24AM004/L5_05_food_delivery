@@ -6,7 +6,6 @@ calculation, and order persistence.
 
 from datetime import datetime
 import json
-import pickle
 
 # Global application state containers
 orders = {}
@@ -112,26 +111,33 @@ def daily_revenue():
     )
 
 
-def backup_orders(file="orders.pkl"):
-    """Back up order queue to a binary file using pickle.
+def backup_orders(file="orders.json"):
+    """Back up order queue to a JSON file.
 
     Args:
         file (str): Output file path.
     """
-    with open(file, "wb") as backup_file:
-        pickle.dump(orders, backup_file)
+    with open(file, "w", encoding="utf-8") as backup_file:
+        json.dump(orders, backup_file, indent=2)
 
 
-def restore_orders(file="orders.pkl"):
-    """Restore order queue from a binary pickle backup file.
+def restore_orders(file="orders.json"):
+    """Restore order queue from a JSON backup file.
 
     Args:
         file (str): Input file path.
     """
-    with open(file, "rb") as backup_file:
-        loaded = pickle.load(backup_file)
+    with open(file, "r", encoding="utf-8") as backup_file:
+        loaded = json.load(backup_file)
         orders.clear()
-        orders.update(loaded)
+        for order_id_str, order_data in loaded.items():
+            orders[int(order_id_str)] = order_data
+
+
+def reset_system():
+    """Reset the order queue and next order ID generator to initial state."""
+    orders.clear()
+    _state["next_id"] = 1
 
 
 def print_queue():
