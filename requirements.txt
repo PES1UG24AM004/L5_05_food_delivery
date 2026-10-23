@@ -1,0 +1,5 @@
+pylint>=4.0.0
+bandit>=1.8.0
+flake8>=7.0.0
+pytest>=8.0.0
+reportlab>=4.0.0
