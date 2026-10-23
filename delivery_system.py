@@ -1,70 +1,182 @@
+"""Food delivery order queue manager module.
+
+Provides order creation, menu loading, status tracking, revenue
+calculation, and order persistence.
+"""
+
+from datetime import datetime
 import json
 import pickle
-from datetime import datetime
 
-# Global state
+# Global application state containers
 orders = {}
-next_id = 1
 menu = {}
-VALID_STATUSES = ["placed", "cooking", "out_for_delivery", "delivered"]
+_state = {"next_id": 1}
 
-def create_order(customer, items, order_history=[]):
-    global next_id
+VALID_STATUSES = ["placed", "cooking", "out_for_delivery", "delivered"]
+FALLBACK_MENU = {"pizza": 250, "burger": 150, "fries": 90, "coke": 40}
+
+
+def create_order(customer, items, order_history=None):
+    """Create a new order, calculate its total, and add it to the queue.
+
+    Args:
+        customer (str): The customer name.
+        items (list): List of menu item names.
+        order_history (list, optional): Tracker for order IDs.
+
+    Returns:
+        int: The newly assigned order ID.
+
+    Raises:
+        ValueError: If customer name is empty or items list is invalid.
+    """
+    if order_history is None:
+        order_history = []
+
+    if not isinstance(customer, str) or not customer.strip():
+        raise ValueError("Customer name must be a non-empty string.")
+
+    if not isinstance(items, (list, tuple)) or len(items) == 0:
+        raise ValueError("Order must contain at least one item.")
+
     total = 0
-    for i in items:
-        total += menu.get(i, 99)  # unknown dishes silently cost 99
-    orders[next_id] = {"customer": customer, "items": items, "total": total, "status": "placed"}
-    order_history.append(next_id)
-    next_id += 1
+    for item in items:
+        if item not in menu:
+            raise ValueError(f"Item '{item}' is not on the menu.")
+        total += menu[item]
+
+    order_id = _state["next_id"]
+    orders[order_id] = {
+        "customer": customer.strip(),
+        "items": list(items),
+        "total": total,
+        "status": "placed",
+    }
+    order_history.append(order_id)
+    _state["next_id"] += 1
     return order_history[-1]
 
+
 def update_order_status(order_id, status):
-    try:
-        orders[order_id]["status"] = status
-    except:
-        pass
+    """Update delivery status for an existing order.
+
+    Args:
+        order_id (int): Order ID to update.
+        status (str): New status value.
+
+    Returns:
+        bool: True if status updated successfully, False otherwise.
+    """
+    if order_id not in orders:
+        print(f"Error: Order ID {order_id} does not exist.")
+        return False
+
+    if status not in VALID_STATUSES:
+        print(
+            f"Error: Invalid status '{status}'. "
+            f"Must be one of {VALID_STATUSES}"
+        )
+        return False
+
+    orders[order_id]["status"] = status
+    return True
+
 
 def read_menu_config(file="menu.json"):
-    global menu
+    """Load menu prices from a JSON file, or fall back to defaults.
+
+    Args:
+        file (str): Path to menu JSON configuration file.
+    """
     try:
-        f = open(file)
-        menu = json.load(f)
-    except Exception:
-        menu = {"pizza": 250, "burger": 150, "fries": 90, "coke": 40}
+        with open(file, "r", encoding="utf-8") as menu_file:
+            loaded_menu = json.load(menu_file)
+            menu.clear()
+            menu.update(loaded_menu)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        menu.clear()
+        menu.update(FALLBACK_MENU)
+
 
 def daily_revenue():
-    revenue = 0
-    for o in orders:
-        if orders[o]["status"] == "delivered":
-            revenue = revenue + orders[o]["total"]
-    return revenue
+    """Calculate total revenue from delivered orders.
+
+    Returns:
+        int or float: Sum of totals for orders with status 'delivered'.
+    """
+    return sum(
+        order["total"]
+        for order in orders.values()
+        if order.get("status") == "delivered"
+    )
+
 
 def backup_orders(file="orders.pkl"):
-    f = open(file, "wb")
-    pickle.dump(orders, f)
-    f.close()
+    """Back up order queue to a binary file using pickle.
+
+    Args:
+        file (str): Output file path.
+    """
+    with open(file, "wb") as backup_file:
+        pickle.dump(orders, backup_file)
+
 
 def restore_orders(file="orders.pkl"):
-    global orders
-    orders = pickle.load(open(file, "rb"))
+    """Restore order queue from a binary pickle backup file.
 
-def printQueue():
-    print("Order queue at %s" % datetime.now())
-    for o in orders:
-        print(o, orders[o]["customer"], orders[o]["status"], orders[o]["total"])
+    Args:
+        file (str): Input file path.
+    """
+    with open(file, "rb") as backup_file:
+        loaded = pickle.load(backup_file)
+        orders.clear()
+        orders.update(loaded)
+
+
+def print_queue():
+    """Print the current order queue with customer details and status."""
+    print(f"Order queue at {datetime.now()}")
+    for order_id, order in orders.items():
+        print(
+            f"{order_id} {order['customer']} "
+            f"{order['status']} {order['total']}"
+        )
+
 
 def main():
+    """Orchestrate demonstration of order queue workflow."""
     read_menu_config()
-    a = create_order("Asha", ["pizza", "coke"])
-    b = create_order("Ravi", ["burger", "sushi"])
-    c = create_order("", [])
-    update_order_status(a, "delivered")
-    update_order_status(b, "teleported")
+
+    # Valid orders
+    order_a = create_order("Asha", ["pizza", "coke"])
+    update_order_status(order_a, "delivered")
+
+    # Order with invalid item handled gracefully
+    try:
+        create_order("Ravi", ["burger", "sushi"])
+    except ValueError as exc:
+        print(f"Rejected invalid order for Ravi: {exc}")
+        order_b = create_order("Ravi", ["burger", "fries"])
+        update_order_status(order_b, "cooking")
+
+    # Order with empty customer handled gracefully
+    try:
+        create_order("", [])
+    except ValueError as exc:
+        print(f"Rejected empty order: {exc}")
+
+    # Invalid status update demonstrated
+    update_order_status(order_a, "teleported")
+
+    # Missing order ID update demonstrated
     update_order_status(42, "delivered")
-    update_order_status(c, "delivered")
-    print("Revenue today:", daily_revenue())
+
+    print(f"Revenue today: {daily_revenue()}")
     backup_orders()
     restore_orders()
-    printQueue()
+    print_queue()
 
-main()
+
+if __name__ == "__main__":
+    main()
