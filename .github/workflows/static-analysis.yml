@@ -1,0 +1,53 @@
+name: Static Code Analysis & Test CI
+
+on:
+  push:
+    branches:
+      - main
+      - lab5-pes1ug24am004-static-analysis
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  static-analysis-and-tests:
+    name: Lint, Security Scan & Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run automated test suite
+        run: |
+          python -m unittest test_delivery_system.py
+
+      - name: Run Flake8 PEP 8 linter
+        run: |
+          flake8 delivery_system.py test_delivery_system.py
+
+      - name: Run Bandit security scanner
+        run: |
+          bandit -r delivery_system.py
+
+      - name: Run Pylint quality checker (Score threshold >= 9.5)
+        run: |
+          pylint --fail-under=9.5 delivery_system.py
+
+      - name: Run application smoke test
+        run: |
+          python delivery_system.py
